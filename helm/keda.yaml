@@ -1,0 +1,7 @@
+# helm/keda.yaml — Helm values for KEDA (namespace keda) — required by LangSmith Deployments.
+# Edit, then re-apply with: ./post-deploy/04-cluster-prereqs.sh platform
+# Placeholders filled by post-deploy/04: IMAGE_BASE  (KEDA does not call AWS: no identity needed)
+image:
+  keda:             { registry: ${IMAGE_BASE}, repository: kedacore/keda }
+  metricsApiServer: { registry: ${IMAGE_BASE}, repository: kedacore/keda-metrics-apiserver }
+  webhooks:         { registry: ${IMAGE_BASE}, repository: kedacore/keda-admission-webhooks }

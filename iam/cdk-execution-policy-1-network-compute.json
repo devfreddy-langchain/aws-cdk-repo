@@ -1,0 +1,257 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadOnlyDiscovery",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*",
+        "elasticloadbalancing:Describe*",
+        "eks:ListClusters",
+        "rds:DescribeDBEngineVersions",
+        "rds:DescribeOrderableDBInstanceOptions",
+        "elasticache:DescribeCacheEngineVersions",
+        "route53:ListHostedZones",
+        "route53:ListHostedZonesByName",
+        "kms:ListAliases",
+        "secretsmanager:GetRandomPassword"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "NetworkStackVpcSubnetsNatRoutesEndpoints",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:CreateVpc",
+        "ec2:ModifyVpcAttribute",
+        "ec2:AssociateVpcCidrBlock",
+        "ec2:DisassociateVpcCidrBlock",
+        "ec2:CreateSubnet",
+        "ec2:ModifySubnetAttribute",
+        "ec2:CreateInternetGateway",
+        "ec2:AttachInternetGateway",
+        "ec2:DetachInternetGateway",
+        "ec2:AllocateAddress",
+        "ec2:CreateNatGateway",
+        "ec2:CreateRouteTable",
+        "ec2:CreateRoute",
+        "ec2:DeleteRoute",
+        "ec2:ReplaceRoute",
+        "ec2:AssociateRouteTable",
+        "ec2:DisassociateRouteTable",
+        "ec2:CreateVpcEndpoint",
+        "ec2:ModifyVpcEndpoint"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "${AWS_REGION}"
+        }
+      }
+    },
+    {
+      "Sid": "Ec2SecurityGroupsLaunchTemplatesBastion",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:CreateSecurityGroup",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:RevokeSecurityGroupEgress",
+        "ec2:UpdateSecurityGroupRuleDescriptionsIngress",
+        "ec2:UpdateSecurityGroupRuleDescriptionsEgress",
+        "ec2:ModifySecurityGroupRules",
+        "ec2:CreateLaunchTemplate",
+        "ec2:CreateLaunchTemplateVersion",
+        "ec2:ModifyLaunchTemplate",
+        "ec2:GetLaunchTemplateData",
+        "ec2:RunInstances",
+        "ec2:CreateTags",
+        "ec2:DeleteTags"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "${AWS_REGION}"
+        }
+      }
+    },
+    {
+      "Sid": "Ec2DeleteOnlyWhatThisInstallTagged",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DeleteVpc",
+        "ec2:DeleteSubnet",
+        "ec2:DeleteInternetGateway",
+        "ec2:ReleaseAddress",
+        "ec2:DeleteNatGateway",
+        "ec2:DeleteRouteTable",
+        "ec2:DeleteVpcEndpoints",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DeleteLaunchTemplate",
+        "ec2:TerminateInstances"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/langsmith-env": "${NAME}"
+        }
+      }
+    },
+    {
+      "Sid": "EksClusterNodegroupsAddonsAccessPodIdentity",
+      "Effect": "Allow",
+      "Action": [
+        "eks:CreateCluster",
+        "eks:DeleteCluster",
+        "eks:DescribeCluster",
+        "eks:UpdateClusterConfig",
+        "eks:UpdateClusterVersion",
+        "eks:CreateNodegroup",
+        "eks:DeleteNodegroup",
+        "eks:DescribeNodegroup",
+        "eks:UpdateNodegroupConfig",
+        "eks:UpdateNodegroupVersion",
+        "eks:CreateAddon",
+        "eks:DeleteAddon",
+        "eks:DescribeAddon",
+        "eks:UpdateAddon",
+        "eks:CreateAccessEntry",
+        "eks:DeleteAccessEntry",
+        "eks:DescribeAccessEntry",
+        "eks:UpdateAccessEntry",
+        "eks:AssociateAccessPolicy",
+        "eks:DisassociateAccessPolicy",
+        "eks:ListAssociatedAccessPolicies",
+        "eks:CreatePodIdentityAssociation",
+        "eks:DeletePodIdentityAssociation",
+        "eks:DescribePodIdentityAssociation",
+        "eks:UpdatePodIdentityAssociation",
+        "eks:TagResource",
+        "eks:UntagResource",
+        "eks:ListTagsForResource",
+        "eks:DescribeUpdate",
+        "eks:ListUpdates"
+      ],
+      "Resource": [
+        "arn:aws:eks:${AWS_REGION}:${ACCOUNT_ID}:cluster/${NAME}",
+        "arn:aws:eks:${AWS_REGION}:${ACCOUNT_ID}:nodegroup/${NAME}/*",
+        "arn:aws:eks:${AWS_REGION}:${ACCOUNT_ID}:addon/${NAME}/*",
+        "arn:aws:eks:${AWS_REGION}:${ACCOUNT_ID}:access-entry/${NAME}/*",
+        "arn:aws:eks:${AWS_REGION}:${ACCOUNT_ID}:podidentityassociation/${NAME}/*"
+      ]
+    },
+    {
+      "Sid": "EksAddonCatalogReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "eks:DescribeAddonVersions",
+        "eks:DescribeAddonConfiguration"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EksControlPlaneLogGroup",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:DeleteLogGroup",
+        "logs:PutRetentionPolicy",
+        "logs:DeleteRetentionPolicy",
+        "logs:TagResource",
+        "logs:UntagResource",
+        "logs:ListTagsForResource",
+        "logs:TagLogGroup",
+        "logs:UntagLogGroup",
+        "logs:ListTagsLogGroup"
+      ],
+      "Resource": [
+        "arn:aws:logs:${AWS_REGION}:${ACCOUNT_ID}:log-group:/aws/eks/${NAME}/cluster",
+        "arn:aws:logs:${AWS_REGION}:${ACCOUNT_ID}:log-group:/aws/eks/${NAME}/cluster:*"
+      ]
+    },
+    {
+      "Sid": "InternalAlbForEnvoyGateway",
+      "Effect": "Allow",
+      "Action": [
+        "elasticloadbalancing:CreateLoadBalancer",
+        "elasticloadbalancing:DeleteLoadBalancer",
+        "elasticloadbalancing:ModifyLoadBalancerAttributes",
+        "elasticloadbalancing:SetSecurityGroups",
+        "elasticloadbalancing:SetSubnets",
+        "elasticloadbalancing:CreateTargetGroup",
+        "elasticloadbalancing:DeleteTargetGroup",
+        "elasticloadbalancing:ModifyTargetGroup",
+        "elasticloadbalancing:ModifyTargetGroupAttributes",
+        "elasticloadbalancing:CreateListener",
+        "elasticloadbalancing:DeleteListener",
+        "elasticloadbalancing:ModifyListener",
+        "elasticloadbalancing:AddTags",
+        "elasticloadbalancing:RemoveTags"
+      ],
+      "Resource": [
+        "arn:aws:elasticloadbalancing:${AWS_REGION}:${ACCOUNT_ID}:loadbalancer/app/${NAME}-alb/*",
+        "arn:aws:elasticloadbalancing:${AWS_REGION}:${ACCOUNT_ID}:targetgroup/${NAME}-envoy/*",
+        "arn:aws:elasticloadbalancing:${AWS_REGION}:${ACCOUNT_ID}:listener/app/${NAME}-alb/*"
+      ]
+    },
+    {
+      "Sid": "ReadNetworkStackOutputs",
+      "Effect": "Allow",
+      "Action": "cloudformation:DescribeStacks",
+      "Resource": "arn:aws:cloudformation:${AWS_REGION}:${ACCOUNT_ID}:stack/${NAME}-network/*"
+    },
+    {
+      "Sid": "ReadSsmParametersInTemplates",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameters",
+        "ssm:GetParameter"
+      ],
+      "Resource": [
+        "arn:aws:ssm:${AWS_REGION}:${ACCOUNT_ID}:parameter/cdk-bootstrap/*",
+        "arn:aws:ssm:${AWS_REGION}::parameter/aws/service/ami-amazon-linux-latest/*"
+      ]
+    },
+    {
+      "Sid": "DescribeLogGroups",
+      "Effect": "Allow",
+      "Action": "logs:DescribeLogGroups",
+      "Resource": "*"
+    },
+    {
+      "Sid": "PassThisInstallsRolesToAwsServices",
+      "Effect": "Allow",
+      "Action": [
+        "iam:PassRole"
+      ],
+      "Resource": "arn:aws:iam::${ACCOUNT_ID}:role/${NAME}-*"
+    },
+    {
+      "Sid": "CheckServiceLinkedRolesExist",
+      "Effect": "Allow",
+      "Action": "iam:GetRole",
+      "Resource": "arn:aws:iam::${ACCOUNT_ID}:role/aws-service-role/*"
+    },
+    {
+      "Sid": "ServiceLinkedRolesFirstUseInAccount",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateServiceLinkedRole"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "iam:AWSServiceName": [
+            "eks.amazonaws.com",
+            "eks-nodegroup.amazonaws.com",
+            "autoscaling.amazonaws.com",
+            "rds.amazonaws.com",
+            "elasticache.amazonaws.com",
+            "elasticloadbalancing.amazonaws.com"
+          ]
+        }
+      }
+    }
+  ]
+}

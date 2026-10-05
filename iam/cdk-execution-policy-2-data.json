@@ -1,0 +1,198 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "KmsKeyForEksSecrets",
+      "Effect": "Allow",
+      "Action": [
+        "kms:CreateKey",
+        "kms:DescribeKey",
+        "kms:EnableKeyRotation",
+        "kms:GetKeyRotationStatus",
+        "kms:GetKeyPolicy",
+        "kms:TagResource",
+        "kms:UntagResource",
+        "kms:ListResourceTags",
+        "kms:CreateAlias",
+        "kms:UpdateAlias",
+        "kms:DeleteAlias",
+        "kms:CreateGrant"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "${AWS_REGION}"
+        }
+      }
+    },
+    {
+      "Sid": "KmsKeyPolicyAndDeletionOnlyThisInstallsKey",
+      "Effect": "Allow",
+      "Action": [
+        "kms:PutKeyPolicy",
+        "kms:ScheduleKeyDeletion"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/langsmith-env": "${NAME}"
+        }
+      }
+    },
+    {
+      "Sid": "KmsForRdsManagedMasterPasswords",
+      "Effect": "Allow",
+      "Action": [
+        "kms:GenerateDataKey",
+        "kms:Decrypt"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": "secretsmanager.${AWS_REGION}.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "S3BucketsForThisInstallOnly",
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:DeleteBucket",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+        "s3:GetBucketTagging",
+        "s3:PutBucketTagging",
+        "s3:GetBucketOwnershipControls",
+        "s3:PutBucketOwnershipControls",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:GetEncryptionConfiguration",
+        "s3:PutEncryptionConfiguration",
+        "s3:GetBucketPolicy",
+        "s3:PutBucketPolicy",
+        "s3:DeleteBucketPolicy",
+        "s3:GetLifecycleConfiguration",
+        "s3:PutLifecycleConfiguration"
+      ],
+      "Resource": "arn:aws:s3:::${NAME}-*"
+    },
+    {
+      "Sid": "SecretsUnderThisInstallPrefix",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:CreateSecret",
+        "secretsmanager:DeleteSecret",
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:UpdateSecret",
+        "secretsmanager:PutSecretValue",
+        "secretsmanager:TagResource",
+        "secretsmanager:UntagResource"
+      ],
+      "Resource": "arn:aws:secretsmanager:${AWS_REGION}:${ACCOUNT_ID}:secret:${NAME}/*"
+    },
+    {
+      "Sid": "RdsManagedMasterPasswordSecrets",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:CreateSecret",
+        "secretsmanager:TagResource"
+      ],
+      "Resource": "arn:aws:secretsmanager:${AWS_REGION}:${ACCOUNT_ID}:secret:rds!*"
+    },
+    {
+      "Sid": "RdsInstancesForThisInstall",
+      "Effect": "Allow",
+      "Action": [
+        "rds:CreateDBSubnetGroup",
+        "rds:DeleteDBSubnetGroup",
+        "rds:ModifyDBSubnetGroup",
+        "rds:DescribeDBSubnetGroups",
+        "rds:CreateDBParameterGroup",
+        "rds:DeleteDBParameterGroup",
+        "rds:ModifyDBParameterGroup",
+        "rds:DescribeDBParameterGroups",
+        "rds:DescribeDBParameters",
+        "rds:CreateDBInstance",
+        "rds:DeleteDBInstance",
+        "rds:ModifyDBInstance",
+        "rds:DescribeDBInstances",
+        "rds:CreateDBSnapshot",
+        "rds:AddTagsToResource",
+        "rds:RemoveTagsFromResource",
+        "rds:ListTagsForResource"
+      ],
+      "Resource": [
+        "arn:aws:rds:${AWS_REGION}:${ACCOUNT_ID}:db:${NAME}-*",
+        "arn:aws:rds:${AWS_REGION}:${ACCOUNT_ID}:subgrp:${NAME}-*",
+        "arn:aws:rds:${AWS_REGION}:${ACCOUNT_ID}:pg:${NAME}-*",
+        "arn:aws:rds:${AWS_REGION}:${ACCOUNT_ID}:snapshot:${NAME}-*"
+      ]
+    },
+    {
+      "Sid": "RdsEngineDefaultsReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "rds:DescribeEngineDefaultParameters",
+        "rds:DescribeDBEngineVersions",
+        "rds:DescribeOrderableDBInstanceOptions"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ElastiCacheForThisInstall",
+      "Effect": "Allow",
+      "Action": [
+        "elasticache:CreateCacheSubnetGroup",
+        "elasticache:DeleteCacheSubnetGroup",
+        "elasticache:ModifyCacheSubnetGroup",
+        "elasticache:DescribeCacheSubnetGroups",
+        "elasticache:CreateUser",
+        "elasticache:DeleteUser",
+        "elasticache:ModifyUser",
+        "elasticache:DescribeUsers",
+        "elasticache:CreateUserGroup",
+        "elasticache:DeleteUserGroup",
+        "elasticache:ModifyUserGroup",
+        "elasticache:DescribeUserGroups",
+        "elasticache:CreateReplicationGroup",
+        "elasticache:DeleteReplicationGroup",
+        "elasticache:ModifyReplicationGroup",
+        "elasticache:DescribeReplicationGroups",
+        "elasticache:DescribeCacheClusters",
+        "elasticache:CreateSnapshot",
+        "elasticache:AddTagsToResource",
+        "elasticache:RemoveTagsFromResource",
+        "elasticache:ListTagsForResource"
+      ],
+      "Resource": [
+        "arn:aws:elasticache:${AWS_REGION}:${ACCOUNT_ID}:subnetgroup:${NAME}-*",
+        "arn:aws:elasticache:${AWS_REGION}:${ACCOUNT_ID}:user:${NAME}-*",
+        "arn:aws:elasticache:${AWS_REGION}:${ACCOUNT_ID}:usergroup:${NAME}",
+        "arn:aws:elasticache:${AWS_REGION}:${ACCOUNT_ID}:replicationgroup:${NAME}",
+        "arn:aws:elasticache:${AWS_REGION}:${ACCOUNT_ID}:cluster:${NAME}-*",
+        "arn:aws:elasticache:${AWS_REGION}:${ACCOUNT_ID}:snapshot:${NAME}-*",
+        "arn:aws:elasticache:${AWS_REGION}:${ACCOUNT_ID}:parametergroup:default.valkey8"
+      ]
+    },
+    {
+      "Sid": "PrivateHostedZone",
+      "Effect": "Allow",
+      "Action": [
+        "route53:CreateHostedZone",
+        "route53:DeleteHostedZone",
+        "route53:GetHostedZone",
+        "route53:UpdateHostedZoneComment",
+        "route53:AssociateVPCWithHostedZone",
+        "route53:DisassociateVPCFromHostedZone",
+        "route53:ChangeTagsForResource",
+        "route53:ListTagsForResource",
+        "route53:GetChange",
+        "route53:ListQueryLoggingConfigs",
+        "route53:ChangeResourceRecordSets",
+        "route53:ListResourceRecordSets"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

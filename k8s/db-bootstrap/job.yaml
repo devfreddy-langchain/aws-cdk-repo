@@ -1,0 +1,30 @@
+# k8s/db-bootstrap/job.yaml — the one-shot database bootstrap Job (post-deploy/04 step 8).
+# Placeholders filled by post-deploy/04: NS (the LangSmith namespace), BOOTSTRAP_IMAGE (the postgres
+# image in your ECR, mirrored by 03). The ConfigMap langsmith-db-bootstrap is built by 04 from
+# bootstrap.sh, core.sql and metastore.sql in this folder.
+apiVersion: batch/v1
+kind: Job
+metadata: { name: langsmith-db-bootstrap, namespace: ${NS} }
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 900
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 999, runAsGroup: 999, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: psql
+          image: ${BOOTSTRAP_IMAGE}
+          command: ["/bin/sh", "/bootstrap/bootstrap.sh"]
+          env: [{ name: HOME, value: /tmp }]
+          envFrom: [{ secretRef: { name: langsmith-db-admin } }]
+          resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: 500m, memory: 256Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+          volumeMounts:
+            - { name: files, mountPath: /bootstrap, readOnly: true }
+            - { name: files, mountPath: /sql, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: files, configMap: { name: langsmith-db-bootstrap } }
+        - { name: tmp, emptyDir: {} }

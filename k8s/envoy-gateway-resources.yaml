@@ -1,0 +1,111 @@
+# k8s/envoy-gateway-resources.yaml — the Gateway LangSmith uses, and the Envoy proxy settings (ingress mode 'envoy-gateway').
+# Applied with kubectl by post-deploy/04 (step 5) after the Envoy Gateway chart. Edit, then re-apply with:
+#   ./post-deploy/04-cluster-prereqs.sh envoy-gateway
+# Placeholders filled by post-deploy/04: NS (the LangSmith namespace)
+#
+# Request path: client -> ALB :443 (TLS ends there, CDK) -> Envoy proxy pods :10080 -> HTTPRoute -> Service.
+# The LangSmith chart creates the HTTPRoute for LangSmith (values: gateway.enabled); the Deployments
+# operator creates one HTTPRoute per agent deployment. Both attach to the Gateway below.
+---
+# How Envoy Gateway runs the proxy pods for Gateways of class "langsmith".
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: langsmith-proxy
+  namespace: envoy-gateway-system
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      # ClusterIP: the ALB reaches the pods directly (TargetGroupBinding, IP targets). The default,
+      # LoadBalancer, would make AWS create an extra load balancer that never receives traffic.
+      envoyService:
+        type: ClusterIP
+      # Two proxies in different AZs, and never fewer than one during node drains: every request
+      # to LangSmith goes through them.
+      envoyDeployment:
+        replicas: 2
+        pod:
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: topology.kubernetes.io/zone
+              whenUnsatisfiable: ScheduleAnyway
+              labelSelector:
+                matchLabels:
+                  gateway.envoyproxy.io/owning-gateway-name: langsmith-gateway
+        container:
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { memory: 1Gi }
+      envoyPDB:
+        minAvailable: 1
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: langsmith
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  parametersRef:
+    group: gateway.envoyproxy.io
+    kind: EnvoyProxy
+    name: langsmith-proxy
+    namespace: envoy-gateway-system
+---
+# One plain-HTTP listener: TLS ends at the ALB, and the ALB sends to the proxy pods on 10080
+# (Envoy runs as non-root and serves Gateway port 80 on 80 + 10000).
+# allowedRoutes Same: only routes in the LangSmith namespace (LangSmith and its agent deployments).
+# Agents in another namespace: use `from: Selector` with a namespace label instead.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: langsmith-gateway
+  namespace: ${NS}
+spec:
+  gatewayClassName: langsmith
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+# Envoy ends a request after 15 seconds by default, and neither the LangSmith route nor the
+# operator's agent routes set a timeout. Long requests (exports, streamed agent runs) need more:
+# up to the ALB's 1-hour idle timeout, for every route on this Gateway.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: langsmith-timeouts
+  namespace: ${NS}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: langsmith-gateway
+  timeout:
+    http:
+      requestTimeout: 3600s
+      streamIdleTimeout: 3600s
+---
+# The connection from the ALB: keep idle connections longer than the ALB does (3600 s), as AWS
+# recommends for targets, so the ALB never reuses a connection Envoy is closing (502s). Take the
+# client IP from the address the ALB appends to X-Forwarded-For (1 trusted hop).
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: langsmith-from-alb
+  namespace: ${NS}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: langsmith-gateway
+  clientIPDetection:
+    xForwardedFor:
+      numTrustedHops: 1
+  timeout:
+    http:
+      idleTimeout: 3700s
+      streamIdleTimeout: 3600s

@@ -1,0 +1,258 @@
+# =============================================================================
+# helm/langsmith-values.yaml — Helm values for the LangSmith chart
+#
+# EDIT THIS FILE to reconfigure LangSmith, then:
+#   ./post-deploy/04-cluster-prereqs.sh values     (re-render + validate)
+#   bash out/helm-install-langsmith.sh             (the `helm upgrade --install` it wrote)
+#
+# post-deploy/04 fills in the upper-case ${...} placeholders below (and only those) from
+# out/cdk-outputs.json and post-deploy/settings.env, writes the result to
+# out/langsmith-values.yaml and validates it with `helm template` (every image must come
+# from your ECR). It does not install the chart: you run out/helm-install-langsmith.sh.
+#
+#   IMAGE_BASE              <Account>.dkr.ecr.<Region>.amazonaws.com/<Name> (post-deploy/03)
+#   AWS_REGION, NAME        outputs Region, Name
+#   LANGSMITH_HOSTNAME      output Hostname
+#   ADMIN_EMAIL             secret <SecretsPrefix>initial-org-admin-email (not a secret value)
+#   SMITHDB_TIER            output SmithdbTier
+#   BLOB_BUCKET, SMITHDB_BUCKET                        outputs BlobBucket, SmithdbBucket
+#   LANGSMITH_SA_ANNOTATIONS, SMITHDB_SA_ANNOTATIONS   ServiceAccount annotations, see below
+#   CUSTOM_CA_SECRET_NAME, CUSTOM_CA_SECRET_KEY        empty unless CUSTOM_CA_BUNDLE_FILE is set
+#   REDIS_IMAGE, PGVECTOR_IMAGE   the ECR copies of OPERATOR_REDIS_IMAGE / OPERATOR_PGVECTOR_IMAGE (post-deploy/lib.sh)
+#
+# How traffic reaches LangSmith is NOT in this file: post-deploy/04 adds one overlay by output
+# IngressMode (out/langsmith-ingress.yaml, after this file in the helm command):
+#   envoy-gateway  helm/langsmith-ingress-envoy-gateway.yaml  (HTTPRoutes on the Envoy Gateway)
+#   alb            helm/langsmith-ingress-alb.yaml            (Ingress -> ALB from the Load Balancer Controller)
+#
+# Workload identity (output WorkloadIdentity) decides the ServiceAccount annotations:
+#   irsa         LANGSMITH_SA_ANNOTATIONS = { eks.amazonaws.com/role-arn: "<LangsmithRoleArn>" }
+#                SMITHDB_SA_ANNOTATIONS   = { eks.amazonaws.com/role-arn: "<SmithdbRoleArn>" }
+#   podIdentity  both are {} — CDK already created one pod identity association per
+#                ServiceAccount, so the ServiceAccounts need no annotation.
+# AWS_REGION is set explicitly for every pod in BOTH modes: commonEnv, plus extraEnv for the
+# three components that do not receive commonEnv (playground, aceBackend, operator).
+# Pod Identity does not inject it, and the nodes' IMDSv2 hop limit of 1 stops the SDKs
+# from discovering it.
+#
+# Lower-case ${...} (service_name, namespace, ...) in operator.templates belong to the
+# Deployments operator and are left as they are.
+# For per-environment overrides without editing this file, use EXTRA_VALUES_FILE.
+# Chart: LANGSMITH_CHART_VERSION in post-deploy/settings.env (values checked against 0.17.0).
+# =============================================================================
+# Images: the chart renders <registry>/<repository>:<tag>; everything comes from your ECR (post-deploy/03).
+images:
+  registry: "${IMAGE_BASE}"
+  aceBackendImage:          { repository: langchain/langsmith-ace-backend }
+  backendImage:             { repository: langchain/langsmith-backend }
+  engineInsightsAgentImage: { repository: langchain/langsmith-insights-engine }
+  frontendImage:            { repository: langchain/langsmith-frontend }
+  operatorImage:            { repository: langchain/langgraph-operator }
+  postgresImage:            { repository: postgres }
+  redisImage:               { repository: redis }
+  clickhouseImage:          { repository: clickhouse/clickhouse-server }
+  agentBuilderImage:        { repository: langchain/agent-builder-deep-agent }
+  pollyAgentImage:          { repository: langchain/langsmith-polly }
+  smithdbImage:             { repository: langchain/smithdb }
+  sandboxHostImage:         { repository: langchain/sandbox-host }
+
+# Nodes enforce IMDSv2 hop limit 1 and Pod Identity does not inject AWS_REGION, so the AWS
+# SDKs in the pods cannot discover the region by themselves: set it for every pod.
+commonEnv:
+  - { name: AWS_REGION, value: "${AWS_REGION}" }
+  - { name: AWS_DEFAULT_REGION, value: "${AWS_REGION}" }
+
+config:
+  hostname: "${LANGSMITH_HOSTNAME}"
+  existingSecretName: langsmith-secrets          # post-deploy/04 step "secrets" (ESO)
+  authType: mixed
+  initialOrgAdminEmail: "${ADMIN_EMAIL}"
+  basicAuth: { enabled: true }
+  telemetry: { logs: false, metrics: false, traces: false }   # no usage telemetry to LangChain
+  ttl:
+    enabled: true
+    ttl_period_seconds: { longlived: "34560000", shortlived: "1209600" }   # 400 d / 14 d = S3 lifecycle rules (CDK)
+  blobStorage:
+    enabled: true
+    engine: S3
+    bucketName: "${BLOB_BUCKET}"
+    apiURL: "https://s3.${AWS_REGION}.amazonaws.com"
+    accessKey: ""                                # empty = use the pod's IAM role (IRSA or Pod Identity)
+    accessKeySecret: ""
+  customCa: { secretName: "${CUSTOM_CA_SECRET_NAME}", secretKey: "${CUSTOM_CA_SECRET_KEY}" }
+  deployment:
+    enabled: true                                # LangSmith Deployments: host-backend, listener, operator
+
+# Ingress or Gateway: in the overlay for output IngressMode (see the header).
+frontend:
+  service: { type: ClusterIP }
+
+# External PostgreSQL and Valkey with IAM auth (Kubernetes Secrets from post-deploy/04 step "secrets").
+postgres:
+  external: { enabled: true, existingSecretName: langsmith-postgres, connectionUrlSecretKey: connection_url, iamAuthProvider: aws }
+redis:
+  external: { enabled: true, existingSecretName: langsmith-redis, connectionUrlSecretKey: connection_url, iamAuthProvider: aws }
+clickhouse:
+  enabled: false
+
+# SmithDB: trace store (ClickHouse off). Cache on per-pod gp3 volumes (post-deploy/04 step "storage").
+smithdb:
+  enabled: true
+  resourceTier: ${SMITHDB_TIER}
+  langsmith: { ingestion: { enabled: true }, query: { enabled: true }, migration: { enabled: false } }
+  cache: { storageClassName: smithdb-cache }
+  serviceAccount:
+    annotations: ${SMITHDB_SA_ANNOTATIONS}       # ServiceAccount langsmith-smithdb -> SmithdbRoleArn
+  config:
+    existingSecretName: smithdb-metastore
+    metastore:
+      hostSecretKey: smithdb_metastore_db_host
+      databaseSecretKey: smithdb_metastore_db_name
+      usernameSecretKey: smithdb_metastore_db_username
+      iamAuthProvider: aws
+      iamUsername: smithdb_app
+      port: "5432"
+      useSsl: true
+    objectStore:
+      type: s3
+      bucket: "${SMITHDB_BUCKET}"
+      s3: { region: "${AWS_REGION}", endpoint: "", accessKeyIdSecretKey: "", secretAccessKeySecretKey: "" }
+
+# Every LangSmith ServiceAccount that calls AWS uses the shared role LangsmithRoleArn.
+backend:          { serviceAccount: { annotations: ${LANGSMITH_SA_ANNOTATIONS} } }
+platformBackend:  { serviceAccount: { annotations: ${LANGSMITH_SA_ANNOTATIONS} } }
+queue:            { serviceAccount: { annotations: ${LANGSMITH_SA_ANNOTATIONS} } }
+ingestQueue:      { serviceAccount: { annotations: ${LANGSMITH_SA_ANNOTATIONS} } }
+hostBackend:      { serviceAccount: { annotations: ${LANGSMITH_SA_ANNOTATIONS} } }
+listener:         { serviceAccount: { annotations: ${LANGSMITH_SA_ANNOTATIONS} } }
+playground:
+  serviceAccount: { annotations: ${LANGSMITH_SA_ANNOTATIONS} }
+  deployment: { extraEnv: [{ name: AWS_REGION, value: "${AWS_REGION}" }, { name: AWS_DEFAULT_REGION, value: "${AWS_REGION}" }] }
+aceBackend:
+  deployment: { extraEnv: [{ name: AWS_REGION, value: "${AWS_REGION}" }, { name: AWS_DEFAULT_REGION, value: "${AWS_REGION}" }] }
+# (playground, aceBackend and operator do not receive commonEnv: their region is set with extraEnv.)
+fleetToolServer:    { serviceAccount: { annotations: ${LANGSMITH_SA_ANNOTATIONS} } }
+fleetTriggerServer: { serviceAccount: { annotations: ${LANGSMITH_SA_ANNOTATIONS} } }
+
+# Add-ons. Each has its own database and Redis URL. NOTE the key is iamProvider here
+# (core uses iamAuthProvider). These pods ship without resource requests: set them.
+fleet:
+  enabled: true
+  apiServer:
+    serviceAccount: { annotations: ${LANGSMITH_SA_ANNOTATIONS} }
+    deployment: { resources: { requests: { cpu: 500m, memory: 1Gi }, limits: { cpu: "2", memory: 4Gi } } }
+  queue:
+    serviceAccount: { annotations: ${LANGSMITH_SA_ANNOTATIONS} }
+    deployment: { resources: { requests: { cpu: 500m, memory: 1Gi }, limits: { cpu: "2", memory: 4Gi } } }
+  postgres: { external: { enabled: true, iamProvider: aws, existingSecretName: langsmith-fleet-postgres } }
+  redis:    { external: { enabled: true, iamProvider: aws, existingSecretName: langsmith-fleet-redis } }
+insights:
+  enabled: true
+engineInsightsAgent:
+  apiServer:
+    serviceAccount: { annotations: ${LANGSMITH_SA_ANNOTATIONS} }
+    deployment: { resources: { requests: { cpu: 500m, memory: 1Gi }, limits: { cpu: "2", memory: 4Gi } } }
+  queue:
+    serviceAccount: { annotations: ${LANGSMITH_SA_ANNOTATIONS} }
+    deployment: { resources: { requests: { cpu: 500m, memory: 1Gi }, limits: { cpu: "2", memory: 4Gi } } }
+  postgres: { external: { enabled: true, iamProvider: aws, existingSecretName: langsmith-insights-postgres } }
+  redis:    { external: { enabled: true, iamProvider: aws, existingSecretName: langsmith-insights-redis } }
+polly:
+  enabled: true
+  apiServer:
+    serviceAccount: { annotations: ${LANGSMITH_SA_ANNOTATIONS} }
+    deployment: { resources: { requests: { cpu: 500m, memory: 1Gi }, limits: { cpu: "2", memory: 4Gi } } }
+  queue:
+    serviceAccount: { annotations: ${LANGSMITH_SA_ANNOTATIONS} }
+    deployment: { resources: { requests: { cpu: 500m, memory: 1Gi }, limits: { cpu: "2", memory: 4Gi } } }
+  postgres: { external: { enabled: true, iamProvider: aws, existingSecretName: langsmith-polly-postgres } }
+  redis:    { external: { enabled: true, iamProvider: aws, existingSecretName: langsmith-polly-redis } }
+engine:           { enabled: false }     # needs Sandboxes; not part of this install
+sandboxes:        { enabled: false }
+agentGateway:     { enabled: false }
+presidioAnalyzer: { enabled: false }
+
+# Deployments: the operator creates a small Postgres and Redis per deployed agent from
+# these templates. They are the chart's own templates with the image pointed at an exact tag
+# in ECR — re-copy them from the chart's values.yaml when you upgrade the chart.
+operator:
+  deployment: { extraEnv: [{ name: AWS_REGION, value: "${AWS_REGION}" }, { name: AWS_DEFAULT_REGION, value: "${AWS_REGION}" }] }
+  templates:
+    redis: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: ${service_name}
+        namespace: ${namespace}
+      spec:
+        replicas: 1
+        selector:
+          matchLabels:
+            app: ${service_name}
+        template:
+          metadata:
+            labels:
+              app: ${service_name}
+          spec:
+            enableServiceLinks: false
+            containers:
+            - name: redis
+              image: ${REDIS_IMAGE}
+              ports:
+              - containerPort: 6379
+                name: redis
+              livenessProbe:
+                exec:
+                  command:
+                  - redis-cli
+                  - ping
+                initialDelaySeconds: 30
+                periodSeconds: 10
+              readinessProbe:
+                tcpSocket:
+                  port: 6379
+                initialDelaySeconds: 10
+                periodSeconds: 5
+    db: |
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: ${service_name}
+      spec:
+        serviceName: ${service_name}
+        selector:
+          matchLabels:
+            app: ${service_name}
+        persistentVolumeClaimRetentionPolicy:
+          whenDeleted: Delete
+          whenScaled: Retain
+        template:
+          metadata:
+            labels:
+              app: ${service_name}
+          spec:
+            containers:
+            - name: postgres
+              image: ${PGVECTOR_IMAGE}
+              ports:
+              - containerPort: 5432
+              command: ["docker-entrypoint.sh"]
+              args:
+                - postgres
+                - -c
+                - max_connections=${max_connections}
+              env:
+              - name: PGDATA
+                value: /var/lib/postgresql/data/pgdata
+              volumeMounts:
+              - name: postgres-data
+                mountPath: /var/lib/postgresql/data
+            enableServiceLinks: false
+        volumeClaimTemplates:
+        - metadata:
+            name: postgres-data
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: "${storage_gi}Gi"

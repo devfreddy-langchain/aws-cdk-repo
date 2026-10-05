@@ -1,0 +1,26 @@
+# Every offline check on each push and pull request: tools/check-offline.sh (unit tests, cdk synth
+# of every example config, shellcheck, and post-deploy/04 render against test/fixtures/).
+# No AWS credentials: nothing here can reach an AWS account.
+name: ci
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  offline-checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+      - name: Tools (shellcheck, envsubst, jq)
+        run: sudo apt-get update -q && sudo apt-get install -y -q shellcheck gettext-base jq
+      - run: npm ci
+      - run: ./tools/check-offline.sh

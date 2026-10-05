@@ -1,0 +1,119 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadStackOutputsAndDiscover",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:DescribeStacks",
+        "sts:GetCallerIdentity",
+        "elasticloadbalancing:DescribeLoadBalancers",
+        "elasticloadbalancing:DescribeTargetHealth",
+        "ec2:DescribeSubnets",
+        "ecr:GetAuthorizationToken"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "Kubeconfig",
+      "Effect": "Allow",
+      "Action": [
+        "eks:DescribeCluster"
+      ],
+      "Resource": "arn:aws:eks:${AWS_REGION}:${ACCOUNT_ID}:cluster/${NAME}"
+    },
+    {
+      "Sid": "ReadSeededSecretsAndAdminLogin",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": [
+        "arn:aws:secretsmanager:${AWS_REGION}:${ACCOUNT_ID}:secret:${NAME}/license-key-*",
+        "arn:aws:secretsmanager:${AWS_REGION}:${ACCOUNT_ID}:secret:${NAME}/fernet/*",
+        "arn:aws:secretsmanager:${AWS_REGION}:${ACCOUNT_ID}:secret:${NAME}/initial-org-admin-password-*",
+        "arn:aws:secretsmanager:${AWS_REGION}:${ACCOUNT_ID}:secret:${NAME}/initial-org-admin-email-*"
+      ]
+    },
+    {
+      "Sid": "WriteOnlyTheSeededSecrets",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:PutSecretValue"
+      ],
+      "Resource": [
+        "arn:aws:secretsmanager:${AWS_REGION}:${ACCOUNT_ID}:secret:${NAME}/license-key-*",
+        "arn:aws:secretsmanager:${AWS_REGION}:${ACCOUNT_ID}:secret:${NAME}/fernet/*"
+      ]
+    },
+    {
+      "Sid": "MirrorImagesIntoEcr",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:CreateRepository",
+        "ecr:DescribeRepositories",
+        "ecr:DescribeImages",
+        "ecr:TagResource",
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "ecr:PutImage",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer"
+      ],
+      "Resource": "arn:aws:ecr:${AWS_REGION}:${ACCOUNT_ID}:repository/${NAME}/*"
+    },
+    {
+      "Sid": "ImportNewCertificateTaggedForThisInstall",
+      "Effect": "Allow",
+      "Action": [
+        "acm:ImportCertificate",
+        "acm:AddTagsToCertificate"
+      ],
+      "Resource": "arn:aws:acm:${AWS_REGION}:${ACCOUNT_ID}:certificate/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/langsmith-env": "${NAME}"
+        }
+      }
+    },
+    {
+      "Sid": "ReimportOrTagOnlyThisInstallsCertificate",
+      "Effect": "Allow",
+      "Action": [
+        "acm:ImportCertificate",
+        "acm:AddTagsToCertificate"
+      ],
+      "Resource": "arn:aws:acm:${AWS_REGION}:${ACCOUNT_ID}:certificate/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/langsmith-env": "${NAME}"
+        }
+      }
+    },
+    {
+      "Sid": "DescribeCertificates",
+      "Effect": "Allow",
+      "Action": [
+        "acm:DescribeCertificate"
+      ],
+      "Resource": "arn:aws:acm:${AWS_REGION}:${ACCOUNT_ID}:certificate/*"
+    },
+    {
+      "Sid": "DnsRecordForTheAlb",
+      "Effect": "Allow",
+      "Action": [
+        "route53:ChangeResourceRecordSets",
+        "route53:ListResourceRecordSets",
+        "route53:GetHostedZone",
+        "route53:GetChange"
+      ],
+      "Resource": [
+        "arn:aws:route53:::hostedzone/*",
+        "arn:aws:route53:::change/*"
+      ]
+    }
+  ]
+}

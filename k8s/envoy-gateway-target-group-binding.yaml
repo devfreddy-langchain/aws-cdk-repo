@@ -1,0 +1,17 @@
+# k8s/envoy-gateway-target-group-binding.yaml — registers the Envoy proxy pods in the ALB target group CDK created.
+# Applied with kubectl by post-deploy/04 (step 5, ingress mode 'envoy-gateway'), after the Gateway is programmed.
+# Placeholders filled by post-deploy/04: ENVOY_SERVICE (found by label; Envoy Gateway adds a hash to the name)
+#   TARGET_GROUP_ARN (CDK output TargetGroupArn)
+# The AWS Load Balancer Controller keeps the target group's IPs equal to the proxy pods' IPs. It
+# manages no security group rule: CDK allows the ALB to reach the nodes on 10080.
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: langsmith-envoy
+  namespace: envoy-gateway-system
+spec:
+  serviceRef:
+    name: ${ENVOY_SERVICE}
+    port: 80
+  targetGroupARN: ${TARGET_GROUP_ARN}
+  targetType: ip

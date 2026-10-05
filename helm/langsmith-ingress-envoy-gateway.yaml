@@ -1,0 +1,13 @@
+# helm/langsmith-ingress-envoy-gateway.yaml — LangSmith values overlay for ingress mode 'envoy-gateway' (the default).
+# post-deploy/04 renders it into out/langsmith-ingress.yaml and adds it after out/langsmith-values.yaml.
+# Placeholders: NS (the LangSmith namespace)
+#
+# The chart creates an HTTPRoute for LangSmith on the Gateway post-deploy/04 created
+# (k8s/envoy-gateway-resources.yaml), and passes the same Gateway to the Deployments operator,
+# which creates one HTTPRoute per agent deployment. No Ingress: the ALB is CDK's.
+ingress:
+  enabled: false
+gateway:
+  enabled: true
+  name: langsmith-gateway
+  namespace: ${NS}

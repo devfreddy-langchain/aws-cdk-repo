@@ -1,0 +1,15 @@
+# helm/cluster-autoscaler.yaml — Helm values for the Cluster Autoscaler (kube-system).
+# Edit, then re-apply with: ./post-deploy/04-cluster-prereqs.sh platform
+# Placeholders filled by post-deploy/04 from out/cdk-outputs.json and post-deploy/settings.env:
+#   AWS_REGION CLUSTER_NAME IMAGE_BASE CLUSTER_AUTOSCALER_IMAGE_TAG CLUSTER_AUTOSCALER_SA_ANNOTATIONS
+# awsRegion becomes the pod's AWS_REGION (needed with IMDSv2 hop limit 1 and with Pod Identity).
+# CLUSTER_AUTOSCALER_SA_ANNOTATIONS is { eks.amazonaws.com/role-arn: "<role>" } with IRSA, {} with Pod Identity.
+cloudProvider: aws
+awsRegion: ${AWS_REGION}
+autoDiscovery: { clusterName: ${CLUSTER_NAME} }
+image: { repository: ${IMAGE_BASE}/autoscaling/cluster-autoscaler, tag: ${CLUSTER_AUTOSCALER_IMAGE_TAG} }
+rbac:
+  serviceAccount:
+    name: cluster-autoscaler
+    annotations: ${CLUSTER_AUTOSCALER_SA_ANNOTATIONS}
+extraArgs: { balance-similar-node-groups: true, skip-nodes-with-system-pods: false, expander: least-waste }

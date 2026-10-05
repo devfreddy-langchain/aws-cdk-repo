@@ -1,0 +1,18 @@
+# helm/envoy-gateway.yaml — Helm values for Envoy Gateway (namespace envoy-gateway-system), ingress mode 'envoy-gateway'.
+# Chart oci://docker.io/envoyproxy/gateway-helm. Edit, then re-apply with: ./post-deploy/04-cluster-prereqs.sh envoy-gateway
+# Placeholders filled by post-deploy/04: IMAGE_BASE ENVOY_GATEWAY_CHART_VERSION ENVOY_PROXY_IMAGE_TAG
+# This chart runs the CONTROLLER and installs the Gateway API CRDs. The controller then creates and
+# configures the Envoy proxy pods for each Gateway; their settings are in k8s/envoy-gateway-resources.yaml.
+# Envoy Gateway does not call AWS: no identity needed.
+global:
+  images:
+    envoyGateway: { image: "${IMAGE_BASE}/envoyproxy/gateway:${ENVOY_GATEWAY_CHART_VERSION}" }
+    # The proxy image for every Gateway: the Envoy version this Envoy Gateway release is tested with.
+    envoyProxy: { image: "${IMAGE_BASE}/envoyproxy/envoy:${ENVOY_PROXY_IMAGE_TAG}" }
+    # Only runs with Envoy Gateway rate limiting, which this install does not use, so 03 does not
+    # mirror it. Pointed at your ECR anyway, so nothing ever references Docker Hub.
+    ratelimit: { image: "${IMAGE_BASE}/envoyproxy/ratelimit:0482748e" }
+deployment:
+  replicas: 2                 # leader election: one active, one standby
+podDisruptionBudget:
+  minAvailable: 1

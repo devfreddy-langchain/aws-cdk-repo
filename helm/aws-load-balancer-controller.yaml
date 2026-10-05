@@ -1,0 +1,24 @@
+# helm/aws-load-balancer-controller.yaml — Helm values for the AWS Load Balancer Controller (kube-system).
+# Edit, then re-apply with: ./post-deploy/04-cluster-prereqs.sh platform
+# Placeholders filled by post-deploy/04 from out/cdk-outputs.json:
+#   CLUSTER_NAME AWS_REGION VPC_ID IMAGE_BASE LBC_SA_ANNOTATIONS NAME
+# region and vpcId are explicit because the nodes enforce IMDSv2 with hop limit 1 (pods cannot
+# read instance metadata) and because EKS Pod Identity does not inject AWS_REGION.
+# LBC_SA_ANNOTATIONS is { eks.amazonaws.com/role-arn: "<role>" } with IRSA, {} with Pod Identity.
+clusterName: ${CLUSTER_NAME}
+region: ${AWS_REGION}
+vpcId: ${VPC_ID}
+# Tags on every AWS resource the controller creates (ALB, listeners, target groups, its backend
+# security group), so they are found with the rest of the environment (tools/list-resources.sh).
+defaultTags:
+  app: langsmith
+  langsmith-env: ${NAME}
+replicaCount: 2
+image: { repository: ${IMAGE_BASE}/eks/aws-load-balancer-controller }
+serviceAccount:
+  name: aws-load-balancer-controller
+  annotations: ${LBC_SA_ANNOTATIONS}
+enableServiceMutatorWebhook: false
+enableShield: false
+enableWaf: false
+enableWafv2: false

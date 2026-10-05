@@ -1,0 +1,27 @@
+{
+  "name": "langsmith-aws-cdk",
+  "version": "0.1.0",
+  "description": "AWS CDK app that builds the AWS infrastructure for self-hosted LangSmith on Amazon EKS",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsc --noEmit && jest",
+    "cdk": "cdk",
+    "iam-pack": "ts-node --prefer-ts-exts bin/iam-pack.ts",
+    "sizes": "ts-node --prefer-ts-exts bin/sizes.ts"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.0.0",
+    "aws-cdk": "2.1144.0",
+    "jest": "^30.0.0",
+    "ts-jest": "^29.4.0",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.9.0"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.272.0",
+    "constructs": "10.8.1"
+  }
+}

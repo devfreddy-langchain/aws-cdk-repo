@@ -1,0 +1,23 @@
+# helm/langsmith-ingress-alb.yaml — LangSmith values overlay for ingress mode 'alb' (CDK config ingress.mode).
+# post-deploy/04 renders it into out/langsmith-ingress.yaml and adds it after out/langsmith-values.yaml.
+# Placeholders: CERTIFICATE_ARN (output CertificateArn, or post-deploy/00), PRIVATE_SUBNET_IDS,
+#   ALB_SECURITY_GROUP_ID (outputs PrivateSubnetIds, AlbSecurityGroupId), NAME
+#
+# Internal ALB from the AWS Load Balancer Controller, straight to the pods. The Deployments operator
+# adds the routes of each deployed agent to this same Ingress (same hostname, same certificate).
+# The subnets annotation names the ALB's subnets explicitly, so your subnets need no
+# kubernetes.io/role/internal-elb tag; the security group is the one CDK created (<Name>-alb).
+ingress:
+  enabled: true
+  ingressClassName: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/certificate-arn: "${CERTIFICATE_ARN}"
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+    alb.ingress.kubernetes.io/subnets: "${PRIVATE_SUBNET_IDS}"
+    alb.ingress.kubernetes.io/security-groups: "${ALB_SECURITY_GROUP_ID}"
+    alb.ingress.kubernetes.io/manage-backend-security-group-rules: "true"
+    alb.ingress.kubernetes.io/load-balancer-attributes: routing.http.drop_invalid_header_fields.enabled=true,idle_timeout.timeout_seconds=3600
+    alb.ingress.kubernetes.io/tags: "app=langsmith,langsmith-env=${NAME}"

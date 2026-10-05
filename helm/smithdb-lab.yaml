@@ -1,0 +1,35 @@
+# helm/smithdb-lab.yaml — SmithDB for LAB installs only (CDK config `size: 'lab'`).
+# post-deploy/04 adds this file after helm/langsmith-values.yaml when the stack output
+# SmithdbResources is 'lab'. It has no placeholders.
+#
+# WHAT  About a quarter of the CPU and memory of SmithDB's `small` tier (≈ 4.75 vCPU instead of
+#       ≈ 18), and the per-pod cache on the cluster's plain gp3 StorageClass (3,000 IOPS / 125 MiB/s)
+#       instead of smithdb-cache (7,000 / 1,000). Cache sizes stay the tier's (100–200 GiB per pod).
+# WHY   Enough to install and use every feature with test traffic, on 2 nodes. NOT a LangChain-
+#       tested configuration: don't use it for performance tests or to size a real install.
+#       Too small for your test? Raise the numbers below, or switch to `size: 'small'`.
+# HOW   An explicit `resources` block replaces the tier's CPU and memory for that component
+#       (LangChain: "Configure SmithDB for scale"). Requests equal limits, as in the tiers.
+smithdb:
+  cache:
+    storageClassName: gp3
+  ingestion:
+    deployment:
+      resources:
+        requests: { cpu: "1", memory: 2Gi }
+        limits:   { cpu: "1", memory: 2Gi }
+  query:
+    deployment:
+      resources:
+        requests: { cpu: "1", memory: 4Gi }
+        limits:   { cpu: "1", memory: 4Gi }
+  compaction:
+    deployment:
+      resources:
+        requests: { cpu: 500m, memory: 1Gi }
+        limits:   { cpu: 500m, memory: 1Gi }
+  compactionWorker:
+    deployment:
+      resources:
+        requests: { cpu: "2", memory: 4Gi }
+        limits:   { cpu: "2", memory: 4Gi }
