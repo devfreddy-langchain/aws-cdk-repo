@@ -16,3 +16,4 @@ cdk.context.json
 *.pem
 *.key
 *.crt
+.claude/

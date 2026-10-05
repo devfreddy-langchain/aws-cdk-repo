@@ -81,7 +81,7 @@ step_storage() {
 }
 
 # =============================================================================
-# 3 — Pod network check (only with pod subnets, "Layout B")
+# 3 — Pod network check (only with a separate pod range: pod subnets)
 # =============================================================================
 # WHAT   Checks, and changes nothing, that pods get their IPs from the pod subnets (output
 #        PodSubnets = "<az>=<subnet-id>,..."). Skipped when there is no PodSubnets output.

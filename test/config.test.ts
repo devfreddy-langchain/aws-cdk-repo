@@ -304,9 +304,9 @@ describe('more validation rules', () => {
     expect(() => validateConfig(created)).toThrow(/createVpc = true: remove vpcCidrs/);
     const b = loadConfig('examples/irsa-dev'); // Layout B
     b.network.addressPlan = 'large';
-    expect(() => validateConfig(b)).toThrow(/addressPlan is for Layout A/);
+    expect(() => validateConfig(b)).toThrow(/addressPlan is for pods in the private subnets/);
     delete b.network.layout; // the default is B too
-    expect(() => validateConfig(b)).toThrow(/addressPlan is for Layout A/);
+    expect(() => validateConfig(b)).toThrow(/addressPlan is for pods in the private subnets/);
     expect(() => validateConfig(loadConfig('examples/layout-a'))).not.toThrow();
   });
 
@@ -322,7 +322,7 @@ describe('more validation rules', () => {
     }
     const a = loadConfig('examples/layout-a');
     a.network.podCidr = '100.64.0.0/16';
-    expect(() => validateConfig(a)).toThrow(/podCidr is for Layout B/);
+    expect(() => validateConfig(a)).toThrow(/podCidr is for a separate pod range/);
     const own = loadConfig('examples/byo-vpc');
     own.network.podCidr = '100.64.0.0/16';
     expect(() => validateConfig(own)).toThrow(/createVpc = false: remove podCidr/);

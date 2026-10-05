@@ -35,7 +35,7 @@ const config: LangSmithConfig = {
       { id: 'subnet-0bbbbbbbbbbbbbbbb', az: 'us-east-1b' },
       { id: 'subnet-0cccccccccccccccc', az: 'us-east-1c' },
     ],
-    podSubnets: [],               // Layout B on your VPC: one per AZ, tagged kubernetes.io/role/cni=1 (README.md, Network)
+    podSubnets: [],               // a separate pod range on your VPC: one per AZ, tagged kubernetes.io/role/cni=1 (README.md, Network)
     s3GatewayEndpointId: undefined,
   },
   // Option 2: a new VPC in its own stack (<name>-network). Layout 'B' (the default) puts pods in 100.64.0.0/16;

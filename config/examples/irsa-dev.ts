@@ -1,4 +1,4 @@
-// New VPC (Layout B: pods in 100.64.0.0/16, one NAT), IRSA, bastion on. The default learning setup.
+// New VPC (a separate pod range: pods in 100.64.0.0/16, one NAT), IRSA, bastion on. The default learning setup.
 import { LangSmithConfig } from '../../lib/config';
 import base from '../example';
 
