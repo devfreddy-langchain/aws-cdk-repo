@@ -137,7 +137,7 @@ client → internal ALB :443 (TLS) → Envoy proxy pods :10080 → HTTPRoute →
 | Identity | Steps | Needs |
 |---|---|---|
 | IAM admin | 2 | rights to create IAM policies and run `cdk bootstrap` (which creates roles) |
-| Deployer: a person or CI | 4 (and Part 3) | `sts:AssumeRole` on `arn:aws:iam::<account>:role/cdk-<qualifier>-*`, nothing else |
+| Deployer: a person or CI | 4 (and Part 3) | `sts:AssumeRole` on `arn:<partition>:iam::<account>:role/cdk-<qualifier>-*`, nothing else |
 | Script runner | 3, 5, 6–9 | the policy `<name>-operator-policy` (from `iam/operator-policy.json`) attached to their role, plus cluster-admin access to EKS: their role in `eks.adminRoleArns`, or the bastion's role, which gets both when `bastion.operatorPolicyArn` is set |
 
 **How pods get AWS access.** Each workload has its own IAM role with short-lived credentials. There are no access keys anywhere.
@@ -301,14 +301,15 @@ Keep `config/<env>.ts` in your own repository. It holds IDs and settings, never 
 
 ```bash
 export ACCOUNT_ID=123456789012 AWS_REGION=us-east-1 NAME=langsmith-dev QUALIFIER=lsdev
+export AWS_PARTITION=aws   # aws-us-gov in GovCloud (us-gov-west-1, us-gov-east-1)
 mkdir -p out
 for f in iam/cdk-execution-policy-*.json iam/operator-policy.json; do
-  envsubst '${ACCOUNT_ID} ${AWS_REGION} ${NAME}' < "$f" > "out/$(basename "$f")"
+  envsubst '${AWS_PARTITION} ${ACCOUNT_ID} ${AWS_REGION} ${NAME}' < "$f" > "out/$(basename "$f")"
   aws iam create-policy --policy-name "$NAME-$(basename "$f" .json)" --policy-document "file://out/$(basename "$f")" \
     --tags Key=app,Value=langsmith Key=langsmith-env,Value=$NAME
 done
 
-P=arn:aws:iam::$ACCOUNT_ID:policy/$NAME-cdk-execution-policy
+P=arn:$AWS_PARTITION:iam::$ACCOUNT_ID:policy/$NAME-cdk-execution-policy
 CDK=$PWD/node_modules/.bin/cdk
 (cd "$(mktemp -d)" && "$CDK" bootstrap "aws://$ACCOUNT_ID/$AWS_REGION" \
   --qualifier "$QUALIFIER" --toolkit-stack-name "CDKToolkit-$QUALIFIER" \
@@ -320,7 +321,7 @@ The bootstrap runs from an empty folder on purpose. Inside the repository, `cdk`
 
 **Variations:**
 - **Your IAM team creates every role:** leave `$P-3-iam` out of the bootstrap.
-- **The bastion will run the scripts:** set `bastion.operatorPolicyArn` to `arn:aws:iam::<account>:policy/<name>-operator-policy`.
+- **The bastion will run the scripts:** set `bastion.operatorPolicyArn` to `arn:<partition>:iam::<account>:policy/<name>-operator-policy`.
 - **A permissions boundary on the toolkit's roles:** add `--custom-permissions-boundary <policy-name>`.
 
 **Check:** the stack `CDKToolkit-<qualifier>` is `CREATE_COMPLETE`.
@@ -521,7 +522,7 @@ npx cdk deploy --all -c config=<env>  # also rewrites out/cdk-outputs.json
 | Make the EKS API private-only | `eks.publicAccessCidrs: []` | `cdk deploy` |
 | Restrict who reaches the UI | `ingress.allowedCidrs: ['10.0.0.0/8']` | `cdk deploy` |
 | Let LangSmith call Bedrock | `workloadRoles.bedrock: true` | `cdk deploy` |
-| Switch IRSA ↔ Pod Identity | `workloadIdentity` | `cdk deploy`, then `04 platform envoy-gateway values` and `bash out/helm-install-langsmith.sh` |
+| Switch IRSA ↔ Pod Identity | `workloadIdentity` | `cdk deploy`, then `04 platform envoy-gateway secrets values` and `bash out/helm-install-langsmith.sh`, then restart the pods that hold the old credentials: `kubectl -n external-secrets rollout restart deployment` and `kubectl -n <namespace> rollout restart deployment,statefulset` |
 | Use your own RDS, bucket or cache | `postgres.core: { enabled: false, existing: {...} }` (and similar) | `cdk deploy`. **This deletes the one the stack created.** |
 | Pin an add-on version | `eks.addonVersions: { coreDns: '...' }` | `cdk deploy` |
 | A second environment in the account | a new `config/<env>.ts` with its own `name` and `cdkQualifier` | Step 2 for it, then deploy |
@@ -598,7 +599,9 @@ Afterwards, `./tools/list-resources.sh <name>` shows what is left (read-only).
 
 `teardown.sh` works in four stages:
 1. **In the cluster:** it uninstalls LangSmith and Envoy Gateway, and removes the load balancers and volumes that controllers created. It only touches the LangSmith and `envoy-gateway-system` namespaces.
-2. **`cdk destroy`:** it destroys both stacks, in the right order. For stage and prod, turn deletion protection off first.
+2. **`cdk destroy`:** it destroys both stacks, in the right order. For stage and prod, turn deletion protection off first. Before that, it removes what would make the destroy fail:
+   - with ingress mode `alb`, the DNS record `05` wrote into the private zone CDK created;
+   - with `dataRemovalPolicy: 'destroy'`, the objects in the buckets CDK created.
 3. **The check:** it runs `list-resources.sh`.
 4. **What is kept on purpose:** it prints the delete commands, but never runs them:
    - what `retain` kept: buckets, secrets, the KMS key, final snapshots;
@@ -768,10 +771,10 @@ This section lists every IAM role the app creates, who can assume it, and everyt
 
 ```bash
 ZONE=$(jq -r '.[].PrivateZoneId // empty' out/cdk-outputs.json)
-jq --arg z "arn:aws:route53:::hostedzone/$ZONE" \
+jq --arg z "arn:${AWS_PARTITION:-aws}:route53:::hostedzone/$ZONE" \
   '(.Statement[] | select(.Sid == "DnsRecordForTheAlb") | .Resource) |= map(if test("hostedzone/") then $z else . end)' \
   out/operator-policy.json > out/operator-policy-narrowed.json
-aws iam create-policy-version --set-as-default --policy-arn arn:aws:iam::<account>:policy/<name>-operator-policy \
+aws iam create-policy-version --set-as-default --policy-arn arn:<partition>:iam::<account>:policy/<name>-operator-policy \
   --policy-document file://out/operator-policy-narrowed.json
 ```
 
