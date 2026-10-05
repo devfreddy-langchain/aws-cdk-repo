@@ -107,8 +107,8 @@ There are three layers, each run by you:
 | | Private (nodes, ALB, databases) | Pod subnet | Public (only for a NAT in the VPC) |
 |---|---|---|---|
 | Layout B (default) | /25 (minimum /26) | /19 in 100.64.0.0/16 (minimum /24 for prod with ~50 agents, /26 for dev) | /28 |
-| Layout A, dev and stage | /23 | — | /28 |
-| Layout A, prod | /22 | — | /28 |
+| Layout A, dev and stage | /23 | none | /28 |
+| Layout A, prod | /22 | none | /28 |
 
 **The request path:**
 
@@ -228,7 +228,7 @@ Plan for about half a day; the first `cdk deploy` alone takes 45–75 minutes. T
 
 | Step | What | Where | Identity | Time |
 |---|---|---|---|---|
-| 1 | Write your config | any machine with Node.js 22 (no AWS access) | — | 30 min |
+| 1 | Write your config | any machine with Node.js 22 (no AWS access) | none | 30 min |
 | 2 | Create the policies and the CDK toolkit | an IAM admin's machine | IAM admin | 10 min |
 | 3 | Provide the TLS certificate | your machine | script runner | 10 min |
 | 4 | Deploy | laptop or CI | deployer | 45–75 min |
@@ -236,7 +236,7 @@ Plan for about half a day; the first `cdk deploy` alone takes 45–75 minutes. T
 | 6 | Move into the VPC | the bastion | script runner | 10 min |
 | 7 | Prepare the cluster | the bastion | script runner | 15 min |
 | 8 | Install LangSmith, smoke test | the bastion | script runner | 20 min |
-| 9 | Make it reachable, sign in | your DNS and PKI teams, a browser | — | varies |
+| 9 | Make it reachable, sign in | your DNS and PKI teams, a browser | none | varies |
 
 Every script after Step 4 reads its inputs from `out/cdk-outputs.json`. So one checkout of this repository serves one environment, unless you point `CDK_OUTPUTS` at another outputs file.
 
@@ -301,7 +301,7 @@ Keep `config/<env>.ts` in your own repository. It holds IDs and settings, never 
 
 ```bash
 export ACCOUNT_ID=123456789012 AWS_REGION=us-east-1 NAME=langsmith-dev QUALIFIER=lsdev
-export AWS_PARTITION=aws   # aws-us-gov in GovCloud (us-gov-west-1, us-gov-east-1)
+export AWS_PARTITION="${AWS_PARTITION:-aws}"   # in GovCloud, export AWS_PARTITION=aws-us-gov first
 mkdir -p out
 for f in iam/cdk-execution-policy-*.json iam/operator-policy.json; do
   envsubst '${AWS_PARTITION} ${ACCOUNT_ID} ${AWS_REGION} ${NAME}' < "$f" > "out/$(basename "$f")"
@@ -679,8 +679,8 @@ Afterwards, `./tools/list-resources.sh <name>` shows what is left (read-only).
 | Layout | VPC | Private ×3 | Public ×3 | Pods ×3 |
 |---|---|---|---|---|
 | B (default) | 10.0.0.0/23 + `network.podCidr` (100.64.0.0/16) | /25 | /28 | /19 |
-| A, `addressPlan: 'standard'` | 10.0.0.0/21 | /23 | /28 | — |
-| A, `addressPlan: 'large'` | 10.0.0.0/20 | /22 | /28 | — |
+| A, `addressPlan: 'standard'` | 10.0.0.0/21 | /23 | /28 | none |
+| A, `addressPlan: 'large'` | 10.0.0.0/20 | /22 | /28 | none |
 
 **Notes:**
 - **Pin `layout`, and `podCidr` (Layout B) or `addressPlan` (Layout A), in your config.** Changing them replaces the VPC or its subnets.
