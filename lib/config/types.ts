@@ -44,19 +44,19 @@ export type WorkloadIdentity = 'irsa' | 'podIdentity';
 export type IngressMode = 'envoy-gateway' | 'alb';
 export const DEFAULT_INGRESS_MODE: IngressMode = 'envoy-gateway';
 
-/** The address plan of a new Layout A VPC (NetworkConfig.addressPlan). */
+/** The address plan of a new VPC with pods in the private subnets, layout 'A' (NetworkConfig.addressPlan). */
 export type AddressPlan = 'standard' | 'large';
 
 /**
  * The network layout of a new VPC (NetworkConfig.layout, README.md, Network):
- * - 'B' (default): only nodes, the ALB, the databases and endpoints use routable addresses; pods get
+ * - 'B' (default, recommended), a separate pod range: only nodes, the ALB, the databases and endpoints use routable addresses; pods get
  *        IPs from a 100.64.0.0/16 secondary CIDR. The VPC CNI finds the pod subnets by their
  *        kubernetes.io/role/cni tag (enhanced subnet discovery): no ENIConfig, one deploy.
- * - 'A': everything, pods included, in routable subnets. LangChain's Terraform module works this way.
+ * - 'A', pods in the private subnets: everything, pods included, in routable subnets. LangChain's Terraform module works this way.
  */
 export type Layout = 'A' | 'B';
 export const DEFAULT_LAYOUT: Layout = 'B';
-/** The pod range of a new Layout B VPC (NetworkConfig.podCidr). */
+/** The pod range of a new VPC with a separate pod range, layout 'B' (NetworkConfig.podCidr). */
 export const DEFAULT_POD_CIDR = '100.64.0.0/16';
 
 /**
@@ -86,14 +86,14 @@ export interface NetworkConfig {
   /** Exactly 3 AZ names. Avoid AZ IDs EKS does not support (use1-az3, usw1-az2, cac1-az3). */
   availabilityZones?: string[];
   /**
-   * 'B' (default) = pods in a 100.64.0.0/16 secondary CIDR, so few routable IPs are used.
-   * 'A' = everything in routable subnets. Set it explicitly: changing it replaces the VPC.
+   * 'B' (default, recommended) = a separate pod range: pods in a 100.64.0.0/16 secondary CIDR, so few routable IPs are used.
+   * 'A' = pods in the private subnets: everything in routable subnets. Set it explicitly: changing it replaces the VPC.
    */
   layout?: Layout;
   /** 'single' = one NAT gateway (cheaper). 'per-az' = one per AZ (survives an AZ outage). Default: single for dev, per-az otherwise. */
   natMode?: 'single' | 'per-az';
   /**
-   * Layout A only: the size of the address plan (README.md, Network).
+   * layout 'A' only: the size of the address plan (README.md, Network).
    * 'standard' = 10.0.0.0/21, a /23 private subnet per AZ (about 500 IPs each).
    * 'large'    = 10.0.0.0/20, a /22 private subnet per AZ (about 1,000 IPs each).
    * Default: 'large' for environment 'prod', 'standard' otherwise. Set it explicitly: changing it
@@ -101,7 +101,7 @@ export interface NetworkConfig {
    */
   addressPlan?: AddressPlan;
   /**
-   * Layout B only: the VPC's second range, for pod addresses. A /16 inside 100.64.0.0/10 or
+   * layout 'B' only: the VPC's second range, for pod addresses. A /16 inside 100.64.0.0/10 or
    * 198.19.0.0/16 that nothing your pods must reach uses (README.md, Network). Each AZ gets a /19
    * of it. Default '100.64.0.0/16'. Set it explicitly: changing it replaces the pod subnets.
    */
@@ -115,7 +115,7 @@ export interface NetworkConfig {
   /** Private subnets, one per AZ, at least 2 AZs: nodes, RDS, Valkey, ALB and the EKS control plane ENIs. */
   privateSubnets?: SubnetRef[];
   /**
-   * Layout B on your VPC: pod subnets from a secondary CIDR, one per AZ (same AZs as privateSubnets).
+   * A separate pod range on your VPC: pod subnets from a secondary CIDR, one per AZ (same AZs as privateSubnets).
    * Tag each one kubernetes.io/role/cni=1, and each private subnet kubernetes.io/role/cni=0
    * (README.md, Network); post-deploy/04 step 3 checks the tags. Empty = pods use the private subnets.
    */
@@ -358,7 +358,7 @@ export function layoutOf(cfg: LangSmithConfig): Layout {
   return cfg.network.layout ?? DEFAULT_LAYOUT;
 }
 
-/** The pod range of a new Layout B VPC, with the default applied. */
+/** The pod range of a new VPC with a separate pod range, with the default applied. */
 export function podCidrOf(cfg: LangSmithConfig): string {
   return cfg.network.podCidr ?? DEFAULT_POD_CIDR;
 }

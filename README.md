@@ -88,7 +88,17 @@ There are three layers, each run by you:
 - **Users** reach LangSmith through an **internal** ALB. By default only the VPC's own ranges may connect, so list your users' ranges in `ingress.allowedCidrs`.
 - **The EKS API endpoint** is private by default (`eks.publicAccessCidrs: []`).
 
-**Pod addresses (the default, "Layout B").** Only nodes, the ALB, the databases and the VPC endpoints use routable addresses. Pods get addresses from a **second VPC range, `100.64.0.0/16`**, that your network never routes. It works like this:
+**How pods get addresses.** There are two options. Use the default unless one of the reasons in the right-hand column applies to you.
+
+| | **Separate pod range** (default, recommended) | **Pods in the private subnets** |
+|---|---|---|
+| Where pods get addresses | a second VPC range, `100.64.0.0/16`, that your network never routes | the routable private subnets, next to the nodes |
+| Routable addresses it uses | few: only nodes, the ALB, the databases and the VPC endpoints (a /25 per AZ) | about 4× more (a /23 or /22 per AZ) |
+| What networks outside the VPC see | the node's address | the pod's address |
+| Choose it when | almost always | other networks must reach pods directly by IP, or you bring a VPC without pod subnets. This matches LangChain's Terraform module. |
+| Config | nothing to set (`network.layout: 'B'` is the default) | `network.layout: 'A'`, or list no pod subnets when you bring your VPC |
+
+**How the separate pod range works:**
 - **The tags.** Pod subnets are tagged `kubernetes.io/role/cni=1` and the private subnets `kubernetes.io/role/cni=0`. The VPC CNI (the EKS pod-networking add-on) uses these tags to place pods. This needs VPC CNI v1.22.2 or later, so CDK pins v1.23.1.
 - **Inside the VPC,** RDS, Valkey and endpoints see the **pod's own address** (100.64.x.x). The security groups allow every VPC range for this reason.
 - **Outside the VPC** (peered VPCs, the Transit Gateway, on-premises, the internet), traffic carries the **node's address**. The VPC CNI translates it (SNAT), so the 100.64 range never needs a route outside the VPC.
@@ -100,15 +110,13 @@ There are three layers, each run by you:
 - **Never advertise it,** in Transit Gateway routes or BGP. Then every VPC can reuse it.
 - **Set it** with `network.podCidr` for a new VPC (a /16; the default is `100.64.0.0/16`), or with `network.podSubnets` and `network.vpcCidrs` for your own VPC. Pin it: changing it replaces the pod subnets.
 
-**Layout A** puts pods in the routable private subnets, as LangChain's Terraform module does. It is simpler, but needs about 4× the routable addresses. Choose it with `network.layout: 'A'`, or by listing no pod subnets when you bring your VPC.
-
 **Subnet sizes per AZ** (3 AZs recommended, at least 2):
 
 | | Private (nodes, ALB, databases) | Pod subnet | Public (only for a NAT in the VPC) |
 |---|---|---|---|
-| Layout B (default) | /25 (minimum /26) | /19 in 100.64.0.0/16 (minimum /24 for prod with ~50 agents, /26 for dev) | /28 |
-| Layout A, dev and stage | /23 | none | /28 |
-| Layout A, prod | /22 | none | /28 |
+| Separate pod range (default) | /25 (minimum /26) | /19 in 100.64.0.0/16 (minimum /24 for prod with ~50 agents, /26 for dev) | /28 |
+| Pods in the private subnets, dev and stage | /23 | none | /28 |
+| Pods in the private subnets, prod | /22 | none | /28 |
 
 **The request path:**
 
@@ -213,7 +221,7 @@ Your settings are one TypeScript file, `config/<env>.ts`. Copy the example that 
 | A new, dedicated VPC; first install or evaluation | [`config/examples/irsa-dev.ts`](config/examples/irsa-dev.ts): new VPC, IRSA, bastion |
 | The same, with EKS Pod Identity | [`config/examples/podidentity-dev.ts`](config/examples/podidentity-dev.ts) |
 | Your organization provides the VPC | [`config/example.ts`](config/example.ts), or [`config/examples/byo-vpc.ts`](config/examples/byo-vpc.ts) with pod subnets and your DNS zone |
-| Pods in the routable subnets (Layout A) | [`config/examples/layout-a.ts`](config/examples/layout-a.ts) |
+| Pods in the private subnets instead of a separate pod range | [`config/examples/layout-a.ts`](config/examples/layout-a.ts) |
 | Your IAM team creates every role | [`config/examples/byo-iam.ts`](config/examples/byo-iam.ts) |
 | No Envoy Gateway: the ALB straight to the pods | [`config/examples/alb-ingress.ts`](config/examples/alb-ingress.ts) |
 | Your own EKS cluster | any of the above, with `eks.enabled: false`, `kms.enabled: false` and `ingress.mode: 'alb'` |
@@ -222,7 +230,7 @@ Your settings are one TypeScript file, `config/<env>.ts`. Copy the example that 
 
 ## Part 2: Deploy, step by step
 
-> **Status:** the default path (Layout B, Envoy Gateway, Steps 1–8) has been run on AWS, with Steps 7–8 run from a laptop rather than the bastion. Appendix F lists what hasn't been run yet. Run it first in a test account.
+> **Status:** the default path (separate pod range, Envoy Gateway, Steps 1–8) has been run on AWS, with Steps 7–8 run from a laptop rather than the bastion. Appendix F lists what hasn't been run yet. Run it first in a test account.
 
 Plan for about half a day; the first `cdk deploy` alone takes 45–75 minutes. The identities are described in 1.4.
 
@@ -433,7 +441,7 @@ It runs nine steps. Each is safe to re-run on its own, by number or by name (`./
 |---|---|---|
 | 1 | `kubeconfig` | writes `out/kubeconfig`; your `~/.kube/config` is left alone |
 | 2 | `storage` | StorageClasses `gp3` (default) and `smithdb-cache`, and the LangSmith namespace |
-| 3 | `pod-network` | Layout B only, read-only: checks the subnet tags, the VPC CNI version and that every pod has a pod-subnet address |
+| 3 | `pod-network` | separate pod range only, read-only: checks the subnet tags, the VPC CNI version and that every pod has a pod-subnet address |
 | 4 | `platform` | Helm: AWS Load Balancer Controller, External Secrets Operator, Cluster Autoscaler, KEDA |
 | 5 | `envoy-gateway` | Envoy Gateway, the LangSmith Gateway and its timeout policies, bound to CDK's ALB. It waits until the ALB reports the proxy pods healthy. |
 | 6 | `custom-ca` | only with `CUSTOM_CA_BUNDLE_FILE`: the Secret `langsmith-custom-ca` |
@@ -676,16 +684,16 @@ Afterwards, `./tools/list-resources.sh <name>` shows what is left (read-only).
 
 **The network stack's address plan** (when `network.createVpc: true`):
 
-| Layout | VPC | Private ×3 | Public ×3 | Pods ×3 |
+| Pod addresses | VPC | Private ×3 | Public ×3 | Pods ×3 |
 |---|---|---|---|---|
-| B (default) | 10.0.0.0/23 + `network.podCidr` (100.64.0.0/16) | /25 | /28 | /19 |
-| A, `addressPlan: 'standard'` | 10.0.0.0/21 | /23 | /28 | none |
-| A, `addressPlan: 'large'` | 10.0.0.0/20 | /22 | /28 | none |
+| Separate pod range (default, `layout: 'B'`) | 10.0.0.0/23 + `network.podCidr` (100.64.0.0/16) | /25 | /28 | /19 |
+| Pods in the private subnets (`layout: 'A'`), `addressPlan: 'standard'` | 10.0.0.0/21 | /23 | /28 | none |
+| Pods in the private subnets (`layout: 'A'`), `addressPlan: 'large'` | 10.0.0.0/20 | /22 | /28 | none |
 
 **Notes:**
-- **Pin `layout`, and `podCidr` (Layout B) or `addressPlan` (Layout A), in your config.** Changing them replaces the VPC or its subnets.
+- **Pin `layout`, and `podCidr` (separate pod range) or `addressPlan` (pods in the private subnets), in your config.** Changing them replaces the VPC or its subnets.
 - **To change the pod range,** set `network.podCidr`, such as `198.19.0.0/16`. To change the other ranges, edit `layoutCidrs` in `lib/stacks/network-stack.ts`.
-- **On your own VPC with Layout B,** tag each pod subnet `kubernetes.io/role/cni=1` and each private subnet `kubernetes.io/role/cni=0`. The `=0` tag affects every cluster in that VPC.
+- **On your own VPC with a separate pod range,** tag each pod subnet `kubernetes.io/role/cni=1` and each private subnet `kubernetes.io/role/cni=0`. The `=0` tag affects every cluster in that VPC.
 
 ### C. IAM roles and permissions
 
@@ -822,11 +830,11 @@ Every change is checked offline: the tests, a synth and `cfn-lint` of every exam
 
 | Area | Status |
 |---|---|
-| Both stacks with only the scoped policies: deploy (IRSA, a new Layout B VPC, `size: 'lab'`, the bastion) | **Run**: about 21 minutes |
-| Layout B: pods in 100.64.0.0/16 through the subnet tags, VPC CNI v1.23.1, pod interfaces on the cluster security group | **Run** |
+| Both stacks with only the scoped policies: deploy (IRSA, a new VPC with a separate pod range, `size: 'lab'`, the bastion) | **Run**: about 21 minutes |
+| Separate pod range: pods in 100.64.0.0/16 through the subnet tags, VPC CNI v1.23.1, pod interfaces on the cluster security group | **Run** |
 | EKS 1.34, the node group and add-ons, IRSA roles, RDS 16 and 18, Valkey, EBS volumes, secrets, private zone | **Run** |
 | `00`–`05` and the LangSmith 0.17 install, run from a laptop through the allow-listed EKS endpoint, with Envoy Gateway ingress (ALB targets healthy, `https://<hostname>` → 200) | **Run** |
-| Teardown (including `--cluster-only` and `--skip-cluster`), and the tag conditions in the policies (EC2 and KMS deletes, the OIDC provider, certificate imports); an earlier version ran teardown with a Layout A VPC | **Not yet run** on this version |
+| Teardown (including `--cluster-only` and `--skip-cluster`), and the tag conditions in the policies (EC2 and KMS deletes, the OIDC provider, certificate imports); an earlier version ran teardown with pods in the private subnets | **Not yet run** on this version |
 | `04` from the bastion; `CUSTOM_CA_BUNDLE_FILE`; agent deployments | **Not yet run** |
 | `ingress.mode: 'alb'`, Pod Identity, bring-your-own VPC and roles | **Not yet run** |
 
@@ -861,7 +869,7 @@ Every change is checked offline: the tests, a synth and `cfn-lint` of every exam
 | **IRSA** | IAM Roles for Service Accounts: an IAM role trusts a pod's ServiceAccount through the cluster's OIDC provider |
 | **EKS Pod Identity** | the newer alternative to IRSA: EKS maps a namespace and ServiceAccount to a role |
 | **VPC CNI** | the EKS add-on that gives pods VPC addresses |
-| **Layout A / B** | where pods get addresses: A in the routable subnets, B (default) in a non-routable second range |
+| **Separate pod range / pods in the private subnets** | where pods get addresses (Network, 1.3). The default, `network.layout: 'B'`, gives pods a non-routable second range; `'A'` puts them in the routable private subnets. |
 | **ESO** | External Secrets Operator: copies Secrets Manager secrets into Kubernetes |
 | **LBC** | AWS Load Balancer Controller: puts the Envoy pods behind the ALB, or creates the ALB with `ingress.mode: 'alb'` |
 | **TargetGroupBinding** | the LBC object that keeps an ALB target group equal to a Service's pods |
@@ -874,7 +882,7 @@ Every change is checked offline: the tests, a synth and `cfn-lint` of every exam
 | **Cluster Autoscaler** | adds or removes nodes, between `nodeMin` and `nodeMax`, as pods need room |
 | **Encryption keys (Fernet)** | symmetric keys that Fleet, Insights and Chat use to encrypt the credentials they store |
 | **`standalone-*` pods** | the Fleet, Insights and Chat services |
-| **`addressPlan`** | Layout A only: the size of the new VPC's address plan (`standard` /21 or `large` /20) |
+| **`addressPlan`** | pods in the private subnets (`layout: 'A'`) only: the size of the new VPC's address plan (`standard` /21 or `large` /20) |
 | **Script runner** | whoever runs `post-deploy/`, with the policy from `iam/operator-policy.json` (not the Deployments operator) |
 
 ---

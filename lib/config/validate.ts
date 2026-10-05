@@ -66,7 +66,7 @@ export function validateConfig(cfg: LangSmithConfig): void {
     need((net.availabilityZones ?? []).length === 3, 'network.createVpc = true: list exactly 3 network.availabilityZones.');
     const ignored = setFields(['vpcId', 'vpcCidrs', 'privateSubnets', 'podSubnets', 's3GatewayEndpointId']);
     need(ignored.length === 0, `network.createVpc = true: remove ${ignored.join(', ')} (the new VPC provides them).`);
-    need(!(net.podCidr && layoutOf(cfg) === 'A'), "network.podCidr is for Layout B; remove it with layout: 'A'.");
+    need(!(net.podCidr && layoutOf(cfg) === 'A'), "network.podCidr is for a separate pod range (layout: 'B'); remove it with layout: 'A'.");
     if (net.podCidr) {
       const m = /^(\d{1,3})\.(\d{1,3})\.0\.0\/16$/.exec(net.podCidr);
       const [a, b] = m ? [Number(m[1]), Number(m[2])] : [0, 0];
@@ -74,7 +74,7 @@ export function validateConfig(cfg: LangSmithConfig): void {
         `network.podCidr '${net.podCidr}': use a /16 inside 100.64.0.0/10 or 198.19.0.0/16, such as 100.64.0.0/16 (README.md, Network).`);
     }
     need(!(net.addressPlan && layoutOf(cfg) === 'B'),
-      "network.addressPlan is for Layout A (layout: 'A'); Layout B, the default, has one fixed plan (README.md, Network).");
+      "network.addressPlan is for pods in the private subnets (layout: 'A'); the default separate pod range has one fixed plan (README.md, Network).");
   } else {
     need(!!net.vpcId, 'network.createVpc = false: set network.vpcId.');
     need((net.vpcCidrs ?? []).length > 0, 'network.createVpc = false: set network.vpcCidrs (every CIDR of the VPC).');
@@ -85,7 +85,7 @@ export function validateConfig(cfg: LangSmithConfig): void {
       need(azs.has(s.az), `network.podSubnets: ${s.id} is in ${s.az}, which has no private subnet.`);
     }
     if (podAzs.size > 0) {
-      for (const az of azs) need(podAzs.has(az), `network.podSubnets: no pod subnet in ${az} (Layout B needs one in every AZ of privateSubnets).`);
+      for (const az of azs) need(podAzs.has(az), `network.podSubnets: no pod subnet in ${az} (a separate pod range needs one in every AZ of privateSubnets).`);
     }
     const ignored = setFields(['availabilityZones', 'layout', 'natMode', 'addressPlan', 'podCidr']);
     need(ignored.length === 0, `network.createVpc = false: remove ${ignored.join(', ')} (they describe a VPC this app creates).`);

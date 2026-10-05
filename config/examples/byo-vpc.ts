@@ -1,4 +1,4 @@
-// Your VPC with a secondary pod CIDR (Layout B on your network: tag the pod subnets kubernetes.io/role/cni=1
+// Your VPC with a secondary pod CIDR (a separate pod range, layout 'B', on your network: tag the pod subnets kubernetes.io/role/cni=1
 // and the private subnets kubernetes.io/role/cni=0, README.md, Network), your S3 gateway endpoint,
 // a narrower ALB audience, and your private zone and certificate.
 import { LangSmithConfig } from '../../lib/config';
